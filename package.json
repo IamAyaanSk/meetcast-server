@@ -1,12 +1,12 @@
 {
-  "name": "sfu-server",
+  "name": "meetcast-server",
   "version": "1.0.0",
   "description": "The SFU server powering the STFU application.",
   "main": "src/index.ts",
   "scripts": {
     "dev": "nodemon src/index.ts",
     "build": "rm -rf dist && tsc",
-    "start": "node -r tsconfig-paths/register dist/index.js",
+    "start": "TS_NODE_BASEURL=./dist node -r tsconfig-paths/register dist/index.js",
     "lint": "eslint 'src/**/*.ts'",
     "lint:fix": "eslint 'src/**/*.ts' --fix",
     "format": "prettier --write 'src/**/*.ts'",
@@ -26,7 +26,7 @@
     "@types/express": "^5.0.2",
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "mediasoup": "3",
+    "mediasoup": "^3.15.8",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
@@ -50,5 +50,10 @@
     "tslib": "^2.8.1",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "mediasoup"
+    ]
   }
 }
