@@ -1,3 +1,6 @@
+import dotenv from 'dotenv'
+dotenv.config()
+
 import express from 'express'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
@@ -12,7 +15,7 @@ const app = express()
 
 app.use(
   cors({
-    origin: '*',
+    origin: /^http:\/\/localhost(:[0-9]+)?$/,
     credentials: true
   })
 )
@@ -20,7 +23,7 @@ app.use(
 const httpServer = createServer(app)
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: {
-    origin: '*',
+    origin: /^http:\/\/localhost(:[0-9]+)?$/,
     credentials: true
   }
 })
