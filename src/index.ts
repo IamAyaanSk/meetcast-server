@@ -3,13 +3,28 @@ dotenv.config()
 
 import express from 'express'
 import { createServer } from 'http'
-import { Server } from 'socket.io'
+import { Server, Socket } from 'socket.io'
 import cors from 'cors'
-import { PORT } from '@/constants/global'
-import { ClientToServerEvents, ServerToClientEvents } from '@/types/socket'
+import { CLIENT_URL, PORT } from '@/constants/global'
+import {
+  ClientToServerEvents,
+  InterServerEvents,
+  RecorderToServerEvents,
+  ServerToClientEvents,
+  ServerToRecorderEvents,
+  SocketData
+} from '@/types/socket'
 import { types as mediasoupTypes } from 'mediasoup'
 import * as mediasoup from 'mediasoup'
 import { createWebRtcTransport } from '@/utils/mediasoup'
+import { authenticateClient } from '@/middlewares/authenticateClient'
+
+// This shoild be in some redis store or persistent storage when the server is scaled
+// But for this app I am keeping it in memory
+
+// Counting it based on producer transports number would be accurate
+let connectedClientCount = 0
+let remoteSocket: Socket<RecorderToServerEvents, ServerToRecorderEvents, InterServerEvents, SocketData> | null = null
 
 const app = express()
 
@@ -21,12 +36,14 @@ app.use(
 )
 
 const httpServer = createServer(app)
-const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
+const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(httpServer, {
   cors: {
     origin: /^http:\/\/localhost(:[0-9]+)?$/,
     credentials: true
   }
 })
+
+io.use(authenticateClient)
 
 const producerTransports = new Map<string, mediasoupTypes.WebRtcTransport>()
 const producers = new Map<string, mediasoupTypes.Producer[]>()
@@ -69,7 +86,14 @@ const startServer = async () => {
     })
 
     io.on('connection', (socket) => {
-      console.log('Client connected', socket.id)
+      if (socket.data.clientType === 'server') {
+        remoteSocket = socket
+
+        remoteSocket.on('recorderStatus', ({ isRecording }) => {
+          console.log('Recorder status:', isRecording)
+          socket.broadcast.emit('recorderStatus', { isRecording })
+        })
+      }
 
       // rtpcapabilities of router
       socket.on('getRouterRtpCapabilities', (callback) => {
@@ -96,6 +120,23 @@ const startServer = async () => {
           const transports = isSender ? producerTransports : consumerTransports
 
           transports.set(socket.id, createdWebRtcTransport.transport)
+
+          // If a sender transport request came this mean a new client is connected
+          if (isSender) {
+            connectedClientCount = producerTransports.size
+
+            if (connectedClientCount === 1) {
+              console.log('First client connected')
+              if (!remoteSocket || remoteSocket.disconnected) {
+                console.log('No remote socket connected, stopping recording')
+              } else {
+                console.log('Starting recording')
+                remoteSocket.emit('startRecording', { meetUrl: `${CLIENT_URL}/stream?mode=recorder` })
+              }
+            }
+            console.log('Connected clients:', connectedClientCount)
+          }
+
           callback(createdWebRtcTransport.transportData)
         } catch (error) {
           console.error('Error creating WebRTC transport:', error)
@@ -140,7 +181,7 @@ const startServer = async () => {
 
           // Notify other clients about the new consumable producer if both audio and video are produced
           // This seems valid as I am by default creating producers for both audio and video on initialization
-          // TODO: There could be a more efficient way to do this
+          // There could be a more better way to do this
           if (producers.get(socket.id)?.length === 2) {
             socket.broadcast.emit('participantConnected', socket.id)
           }
@@ -242,6 +283,16 @@ const startServer = async () => {
         }
       })
 
+      // Recorder status
+      socket.on('getRecorderStatus', () => {
+        if (!remoteSocket || remoteSocket.disconnected) {
+          console.log('No remote socket connected')
+          socket.emit('recorderStatus', { isRecording: false })
+        } else {
+          remoteSocket.emit('getRecorderStatus')
+        }
+      })
+
       // Resume consumer
       socket.on('resumeConsumer', async ({ consumerId }) => {
         const consumer = consumers.get(socket.id)?.find((consumer) => consumer.id === consumerId)
@@ -320,8 +371,10 @@ const startServer = async () => {
       socket.on('disconnect', () => {
         console.log('Client disconnected', socket.id)
 
-        // Notify other clients about the producer disconnection
-        socket.broadcast.emit('participantDisconnected', socket.id)
+        if (socket.data.clientType === 'server') {
+          remoteSocket = null
+          console.log('Remote socket disconnected', socket.id)
+        }
 
         // Close all producers and consumers for the disiconnected client
         if (producers.has(socket.id)) {
@@ -349,16 +402,6 @@ const startServer = async () => {
         }
 
         // Now close transports
-        const producerTransport = producerTransports.get(socket.id)
-        if (producerTransport) {
-          try {
-            producerTransport.close()
-            console.log(`Closed producer transport for ${socket.id}`)
-          } catch (error) {
-            console.error('Error closing producer transport:', error)
-          }
-          producerTransports.delete(socket.id)
-        }
 
         const consumerTransport = consumerTransports.get(socket.id)
         if (consumerTransport) {
@@ -370,6 +413,38 @@ const startServer = async () => {
           }
           consumerTransports.delete(socket.id)
         }
+
+        const producerTransport = producerTransports.get(socket.id)
+        if (producerTransport) {
+          try {
+            producerTransport.close()
+            console.log(`Closed producer transport for ${socket.id}`)
+          } catch (error) {
+            console.error('Error closing producer transport:', error)
+          }
+          producerTransports.delete(socket.id)
+          // Once the producer transport is disconnected we can say that client is disconnected
+          if (socket.data.clientType === 'client') {
+            // Notify other clients about the producer disconnection
+            socket.broadcast.emit('participantDisconnected', socket.id)
+
+            connectedClientCount = producerTransports.size
+
+            // Notify recorder to stop recording
+            if (connectedClientCount === 0) {
+              console.log('Last client disconnected')
+              socket.broadcast.emit('recorderStatus', { isRecording: false })
+              if (!remoteSocket || remoteSocket.disconnected) {
+                console.log('No remote socket connected, stopping recording')
+              } else {
+                console.log('Stopping recording')
+                remoteSocket.emit('stopRecording')
+              }
+            }
+          }
+        }
+
+        console.log('Connected clients:', connectedClientCount)
       })
     })
 

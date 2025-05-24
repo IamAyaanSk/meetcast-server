@@ -1,10 +1,12 @@
 import { TCreateWebRtcTransport, TProduceMedia } from '@/types/common'
 import { DtlsParameters, MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup/types'
+import { ExtendedError, Socket } from 'socket.io'
 
 interface ServerToClientEvents {
   producers: (params: { producerSocketId: string; paused: boolean }[]) => void
   participantConnected: (socketId: string) => void
   participantDisconnected: (socketId: string) => void
+  recorderStatus: (status: { isRecording: boolean }) => void
 
   producerPaused: (params: { producerSocketId: string; kind: MediaKind }) => void
   producerResumed: (params: { producerSocketId: string; kind: MediaKind }) => void
@@ -27,6 +29,8 @@ interface ClientToServerEvents {
     callback: (params: { id: string; kind: MediaKind; producerId: string; rtpParameters: RtpParameters }[]) => void
   ) => void
 
+  getRecorderStatus: () => void
+
   resumeConsumer: (params: { consumerId: string }) => void
 
   getProducers: () => void
@@ -36,4 +40,36 @@ interface ClientToServerEvents {
   resumeProducer: (params: { producerId: string }, callback: () => void) => void
 }
 
-export { ServerToClientEvents, ClientToServerEvents }
+interface InterServerEvents {
+  ping: () => void
+}
+
+interface SocketData {
+  clientType: 'client' | 'server'
+}
+
+interface ServerToRecorderEvents {
+  startRecording: (params: { meetUrl: string }) => void
+  stopRecording: () => void
+
+  getRecorderStatus: () => void
+}
+
+interface RecorderToServerEvents {
+  recorderStatus: (status: { isRecording: boolean }) => void
+}
+
+type SocketMiddleware = (
+  socket: Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>,
+  next: (err?: ExtendedError) => void
+) => void
+
+export {
+  ServerToClientEvents,
+  ClientToServerEvents,
+  InterServerEvents,
+  SocketData,
+  SocketMiddleware,
+  ServerToRecorderEvents,
+  RecorderToServerEvents
+}
