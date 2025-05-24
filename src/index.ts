@@ -254,7 +254,8 @@ const startServer = async () => {
               id: consumer.id,
               kind: consumer.kind,
               producerId: producer.id,
-              rtpParameters: consumer.rtpParameters
+              rtpParameters: consumer.rtpParameters,
+              paused: producer.paused
             })
           }
 
@@ -316,15 +317,14 @@ const startServer = async () => {
       // get producer socket ids
       socket.on('getProducers', () => {
         // Also tell whether the producer is paused or not to resolve existing paused producer blank screen bug
-        const producersWithStatus = Array.from(producers.keys())
+        const remoteProducers = Array.from(producers.keys())
           .map((id) => {
             if (id === socket.id) return null
-            const producer = producers.get(id)?.find((p) => p.kind === 'video')
-            return { producerSocketId: id, paused: !!producer?.paused }
+            return { producerSocketId: id }
           })
           .filter((item) => item !== null)
 
-        socket.emit('producers', producersWithStatus)
+        socket.emit('producers', remoteProducers)
       })
 
       // Pause producer
