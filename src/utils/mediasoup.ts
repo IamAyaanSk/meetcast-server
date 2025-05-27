@@ -1,3 +1,4 @@
+import { MEDIASOUP_TRANSPORT_OPTIONS } from '@/constants/global'
 import { Router } from 'mediasoup/types'
 
 type TCreateWebRtcTransportProps = {
@@ -6,18 +7,7 @@ type TCreateWebRtcTransportProps = {
 
 export async function createWebRtcTransport({ router }: TCreateWebRtcTransportProps) {
   try {
-    const webRtcTransportOptions = {
-      listenIps: [
-        {
-          ip: '127.0.0.1'
-        }
-      ],
-      enableUdp: true,
-      enableTcp: true,
-      preferUdp: true
-    }
-
-    const transport = await router.createWebRtcTransport(webRtcTransportOptions)
+    const transport = await router.createWebRtcTransport(MEDIASOUP_TRANSPORT_OPTIONS)
 
     console.log(`Transport created: ${transport.id}`)
 

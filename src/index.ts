@@ -5,7 +5,7 @@ import express from 'express'
 import { createServer } from 'http'
 import { Server, Socket } from 'socket.io'
 import cors from 'cors'
-import { CLIENT_URL, PORT } from '@/constants/global'
+import { CLIENT_URL, MEDIASOUP_ROUTER_CODECS, PORT } from '@/constants/global'
 import {
   ClientToServerEvents,
   InterServerEvents,
@@ -51,25 +51,6 @@ const producers = new Map<string, mediasoupTypes.Producer[]>()
 const consumerTransports = new Map<string, mediasoupTypes.WebRtcTransport>()
 const consumers = new Map<string, mediasoupTypes.Consumer[]>()
 
-const mediaCodecs: mediasoupTypes.RtpCodecCapability[] = [
-  {
-    kind: 'audio',
-    mimeType: 'audio/opus',
-    clockRate: 48000,
-    channels: 2
-  },
-  {
-    kind: 'video',
-    mimeType: 'video/H264',
-    clockRate: 90000,
-    parameters: {
-      'packetization-mode': 1,
-      'profile-level-id': '42e01f',
-      'level-asymmetry-allowed': 1
-    }
-  }
-]
-
 const startServer = async () => {
   try {
     const worker = await mediasoup.createWorker({
@@ -77,7 +58,7 @@ const startServer = async () => {
     })
     console.log('mediasoup worker created')
 
-    const router = await worker.createRouter({ mediaCodecs })
+    const router = await worker.createRouter({ mediaCodecs: MEDIASOUP_ROUTER_CODECS })
     console.log('mediasoup router created')
 
     worker.on('died', () => {
